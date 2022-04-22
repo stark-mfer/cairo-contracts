@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "eth-amsterdam"
+version = "0.1.0"
+description = "ETH Amsterdam 2022 Hackathon"
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+cairo-nile = "^0.6.1"
+cairo-lang = "^0.8.1"
+openzeppelin-cairo-contracts = "^0.1.0"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
