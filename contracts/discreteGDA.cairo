@@ -1,6 +1,7 @@
 %lang starknet
 
 from openzeppelin.token.erc721.interfaces.IERC721 import IERC721
+from starkware.cairo.common.alloc import alloc
 
 from starkware.cairo.common.cairo_builtins import HashBuiltin, SignatureBuiltin
 from starkware.starknet.common.syscalls import (
@@ -30,8 +31,7 @@ from openzeppelin.token.erc721.library import (
     ERC721_transferFrom,
     ERC721_safeTransferFrom,
     ERC721_mint,
-    ERC721_burn,
-    # ERC721_setTokenURI
+    ERC721_burn
 )
 
 from starkware.cairo.common.uint256 import (
@@ -114,8 +114,16 @@ func ERC721_base_token_uri_suffix() -> (res: felt):
 end
 
 
-
-
+#
+# Events
+#
+@event
+func purchase_event(
+        numTokens : felt,
+        to: felt,
+        value: Uint256
+):
+end
 
 #
 # Constructor
@@ -140,8 +148,9 @@ func constructor{
     # Construct Parents
     ERC721_initializer(name, symbol)
     Ownable_initializer(owner)
-    #  Set TokenURI
+    #  Set TokenURI and initial token ID
     ERC721_Metadata_setBaseTokenURI(base_token_uri_len, base_token_uri, token_uri_suffix)
+    currentId.write(1)
     # Write initial values
     initialPrice.write(_initialPrice)
     scaleFactor.write(_scaleFactor)
@@ -192,7 +201,8 @@ func purchaseTokens{
     #     assert success = TRUE
     # end
 
-
+    # Emit event
+    purchase_event.emit(numTokens=numTokens, to=to, value=value)
 
     return ()
 end
@@ -270,6 +280,52 @@ end
 # Getters
 #
 
+# discreteGDA arguments
+@view
+func price_arguments{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }(numTokens: felt) -> (res_len : felt, res : felt*):
+    alloc_locals
+
+    let (local res: felt*) = alloc()
+
+    let (local current_id) = currentId.read()
+    let (local auction_start_time) = auctionStartTime.read()
+    let (local initial_price) = initialPrice.read()
+    let (local decay_constant) = decayConstant.read()
+
+    let (quantity) = Math64x61_fromFelt(numTokens)
+    let (num_sold) = Math64x61_fromFelt(current_id)
+
+    let (block_timestamp) = get_block_timestamp()
+    let (fixedTimestamp) = Math64x61_fromFelt(block_timestamp)
+    let (time_since_start) = Math64x61_sub(fixedTimestamp, auction_start_time)
+
+    let (scale_factor) = scaleFactor.read()
+
+    let (local pow_num) = Math64x61_pow(scale_factor, num_sold)
+    let (local pow_num2) = Math64x61_pow(scale_factor, quantity)
+    let (local mul_num1) = Math64x61_mul(decay_constant, time_since_start)
+
+    let (num1) = Math64x61_mul(initial_price, pow_num)
+    let (num2) = Math64x61_sub(pow_num2, Math64x61_ONE)
+
+    let (den1) = Math64x61_exp(mul_num1) 
+    let (den2) = Math64x61_sub(scale_factor, Math64x61_ONE)
+
+    assert [res]     = initial_price    # k
+    assert [res + 1] = scale_factor     # alpha
+    assert [res + 2] = decay_constant   # lambda
+    assert [res + 3] = quantity         # q
+    assert [res + 4] = num_sold         # m
+    assert [res + 5] = time_since_start # T
+
+    return (res_len=6, res=res)
+end
+
+# ERC721
 @view
 func supportsInterface{
         syscall_ptr : felt*,
@@ -342,14 +398,13 @@ end
 
 @view
 func tokenURI{
-        syscall_ptr: felt*, 
-        pedersen_ptr: HashBuiltin*, 
+        syscall_ptr: felt*,
+        pedersen_ptr: HashBuiltin*,
         range_check_ptr
-    }(tokenId: Uint256) -> (tokenURI: felt):
-    let (tokenURI: felt) = ERC721_tokenURI(tokenId)
-    return (tokenURI)
+    }(token_id: Uint256) -> (token_uri_len: felt, token_uri: felt*):
+    let (token_uri_len, token_uri) = ERC721_Metadata_tokenURI(token_id)
+    return (token_uri_len=token_uri_len, token_uri=token_uri)
 end
-
 
 #
 # Externals
