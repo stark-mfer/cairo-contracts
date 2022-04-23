@@ -28,6 +28,13 @@ poetry install
 nile compile
 ```
 
+### How to update ABI
+
+```shell
+nile compile
+cp artifacts/abi/* ../stark-mfer-frontend/src/abi/
+```
+
 ### Links
 
 - <https://github.com/Anish-Agnihotri/flipper>
