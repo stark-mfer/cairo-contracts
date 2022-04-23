@@ -14,6 +14,7 @@ from starkware.cairo.common.math import (
     assert_not_zero,
     split_felt
 )
+from starkware.starknet.common.messages import send_message_to_l1
 from openzeppelin.utils.constants import FALSE, TRUE
 from openzeppelin.introspection.ERC165 import ERC165_supports_interface
 from openzeppelin.token.erc721.library import (
@@ -26,8 +27,8 @@ from openzeppelin.token.erc721.library import (
     ERC721_tokenURI,
     ERC721_only_token_owner,
     ERC721_initializer,
-    ERC721_approve, 
-    ERC721_setApprovalForAll, 
+    ERC721_approve,
+    ERC721_setApprovalForAll,
     ERC721_transferFrom,
     ERC721_safeTransferFrom,
     ERC721_mint,
@@ -48,8 +49,8 @@ from openzeppelin.access.ownable import (
 from openzeppelin.token.erc20.interfaces.IERC20 import IERC20
 
 
-from contracts.Math64x61 import ( 
-    Math64x61_fromFelt, 
+from contracts.Math64x61 import (
+    Math64x61_fromFelt,
     Math64x61_toFelt,
     Math64x61_sub,
     Math64x61_mul,
@@ -113,6 +114,19 @@ end
 func ERC721_base_token_uri_suffix() -> (res: felt):
 end
 
+@storage_var
+func l1_messaging_contract() -> (l1_messaging_contract : felt):
+end
+
+func set_l1_messaging_contract{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }(l1 : felt):
+    l1_messaging_contract.write(l1)
+    return ()
+end
+
 
 #
 # Events
@@ -125,13 +139,20 @@ func purchase_event(
 ):
 end
 
+@event
+func l1_send_initiated(
+        tokenId : felt,
+        to: felt
+):
+end
+
 #
 # Constructor
 #
 
 @constructor
 func constructor{
-        syscall_ptr : felt*, 
+        syscall_ptr : felt*,
         pedersen_ptr : HashBuiltin*,
         range_check_ptr
     }(
@@ -169,7 +190,7 @@ func purchaseTokens{
         pedersen_ptr : HashBuiltin*,
         range_check_ptr
     }(
-        numTokens : felt,  
+        numTokens : felt,
         to: felt,
         value: Uint256 # Denominated in auction's configured ERC20
     ):
@@ -194,7 +215,7 @@ func purchaseTokens{
     # let (success) = IERC20.transferFrom(
     #     payment_token,
     #     buyer,
-    #     contract_address, 
+    #     contract_address,
     #     excess_price, # purchase price - value sent
     # )
     # with_attr error_message("unable to refund"):
@@ -260,7 +281,7 @@ func purchase_price{
     let (num1) = Math64x61_mul(initial_price, pow_num)
     let (num2) = Math64x61_sub(pow_num2, Math64x61_ONE)
 
-    let (den1) = Math64x61_exp(mul_num1) 
+    let (den1) = Math64x61_exp(mul_num1)
     let (den2) = Math64x61_sub(scale_factor, Math64x61_ONE)
 
     let (local mul_num2) = Math64x61_mul(num1, num2)
@@ -312,7 +333,7 @@ func price_arguments{
     let (num1) = Math64x61_mul(initial_price, pow_num)
     let (num2) = Math64x61_sub(pow_num2, Math64x61_ONE)
 
-    let (den1) = Math64x61_exp(mul_num1) 
+    let (den1) = Math64x61_exp(mul_num1)
     let (den2) = Math64x61_sub(scale_factor, Math64x61_ONE)
 
     assert [res]     = initial_price    # k
@@ -358,7 +379,7 @@ end
 
 @view
 func balanceOf{
-        syscall_ptr : felt*, 
+        syscall_ptr : felt*,
         pedersen_ptr : HashBuiltin*,
         range_check_ptr
     }(owner: felt) -> (balance: Uint256):
@@ -368,7 +389,7 @@ end
 
 @view
 func ownerOf{
-        syscall_ptr : felt*, 
+        syscall_ptr : felt*,
         pedersen_ptr : HashBuiltin*,
         range_check_ptr
     }(tokenId: Uint256) -> (owner: felt):
@@ -378,7 +399,7 @@ end
 
 @view
 func getApproved{
-        syscall_ptr : felt*, 
+        syscall_ptr : felt*,
         pedersen_ptr : HashBuiltin*,
         range_check_ptr
     }(tokenId: Uint256) -> (approved: felt):
@@ -388,7 +409,7 @@ end
 
 @view
 func isApprovedForAll{
-        syscall_ptr : felt*, 
+        syscall_ptr : felt*,
         pedersen_ptr : HashBuiltin*,
         range_check_ptr
     }(owner: felt, operator: felt) -> (isApproved: felt):
@@ -412,8 +433,8 @@ end
 
 @external
 func approve{
-        pedersen_ptr: HashBuiltin*, 
-        syscall_ptr: felt*, 
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
         range_check_ptr
     }(to: felt, tokenId: Uint256):
     ERC721_approve(to, tokenId)
@@ -422,8 +443,8 @@ end
 
 @external
 func setApprovalForAll{
-        syscall_ptr: felt*, 
-        pedersen_ptr: HashBuiltin*, 
+        syscall_ptr: felt*,
+        pedersen_ptr: HashBuiltin*,
         range_check_ptr
     }(operator: felt, approved: felt):
     ERC721_setApprovalForAll(operator, approved)
@@ -432,12 +453,12 @@ end
 
 @external
 func transferFrom{
-        pedersen_ptr: HashBuiltin*, 
-        syscall_ptr: felt*, 
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
         range_check_ptr
     }(
-        _from: felt, 
-        to: felt, 
+        _from: felt,
+        to: felt,
         tokenId: Uint256
     ):
     ERC721_transferFrom(_from, to, tokenId)
@@ -446,14 +467,14 @@ end
 
 @external
 func safeTransferFrom{
-        pedersen_ptr: HashBuiltin*, 
-        syscall_ptr: felt*, 
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
         range_check_ptr
     }(
-        _from: felt, 
-        to: felt, 
+        _from: felt,
+        to: felt,
         tokenId: Uint256,
-        data_len: felt, 
+        data_len: felt,
         data: felt*
     ):
     ERC721_safeTransferFrom(_from, to, tokenId, data_len, data)
@@ -462,8 +483,8 @@ end
 
 @external
 func setTokenURI{
-        pedersen_ptr: HashBuiltin*, 
-        syscall_ptr: felt*, 
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
         range_check_ptr
     }(base_token_uri_len: felt, base_token_uri: felt*, token_uri_suffix: felt):
     Ownable_only_owner()
@@ -473,8 +494,8 @@ end
 
 @external
 func mint{
-        pedersen_ptr: HashBuiltin*, 
-        syscall_ptr: felt*, 
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
         range_check_ptr
     }(to: felt, tokenId: Uint256):
     Ownable_only_owner()
@@ -484,14 +505,78 @@ end
 
 @external
 func burn{
-        pedersen_ptr: HashBuiltin*, 
-        syscall_ptr: felt*, 
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
         range_check_ptr
     }(tokenId: Uint256):
     ERC721_only_token_owner(tokenId)
     ERC721_burn(tokenId)
     return ()
 end
+
+# Bridging stuff
+
+@external
+func bridge_to_l1{
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
+        range_check_ptr
+    }(recipient: felt, tokenId: Uint256):
+    ERC721_only_token_owner(tokenId)
+    let (l1_messaging_contr) = l1_messaging_contract.read()
+    let (caller_address) = get_caller_address()
+
+    # alloc_locals
+
+    let (message_payload: felt*) = alloc()
+    assert message_payload[0] = caller_address
+    assert message_payload[1] = recipient
+    assert message_payload[2] = tokenId.low
+
+    send_message_to_l1(
+        to_address=l1_messaging_contr,
+        payload_size=3,
+        payload=message_payload
+    )
+
+    l1_send_initiated.emit(
+        tokenId.low,
+        recipient
+    )
+    return ()
+end
+
+@l1_handler
+func l1_claimed{
+            syscall_ptr : felt*,
+            pedersen_ptr : HashBuiltin*,
+            range_check_ptr
+        }(
+        from_address: felt,
+        tokenId : felt
+    ):
+
+    let (tokenIdUint) = felt_to_uint256(tokenId)
+    ERC721_burn(tokenIdUint)
+    return ()
+end
+
+@l1_handler
+func l1_to_l2{
+            syscall_ptr : felt*,
+            pedersen_ptr : HashBuiltin*,
+            range_check_ptr
+        }(
+        from_address: felt,
+        to: felt,
+        tokenId : felt
+    ):
+
+    let (tokenIdUint) = felt_to_uint256(tokenId)
+    ERC721_mint(to, (tokenIdUint))
+    return ()
+end
+
 
 #
 # Utils
