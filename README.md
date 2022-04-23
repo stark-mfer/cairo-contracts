@@ -5,7 +5,7 @@ a [Gradual Dutch Auction](https://www.paradigm.xyz/2022/04/gda) implementation i
 
 Claim one via ...
 
-We used [Flipper](https://github.com/Anish-Agnihotri/flipper) to flip the existing [https://opensea.io/collection/mfers] collection and publish metadat to IPFS (see [nfts/README](./nfts/README.md) for more info).
+We used [Flipper](https://github.com/Anish-Agnihotri/flipper) to flip the existing [mfer](https://opensea.io/collection/mfers) collection and publish metadata to IPFS at [ipfs://QmRnvgj1sofQBTPXfAZX76ktQecC9Xt4FwPCnsNjLLn5XK/](ipfs://QmRnvgj1sofQBTPXfAZX76ktQecC9Xt4FwPCnsNjLLn5XK/).
 
 This project was built for [EthAmsterdam](https://hack.ethglobal.com/ethamsterdam).
 
