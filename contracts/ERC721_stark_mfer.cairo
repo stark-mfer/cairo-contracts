@@ -53,8 +53,9 @@ from contracts.DiscreteGDA import (
     DiscreteGDA_decayConstant,
     DiscreteGDA_auctionStartTime,
     DiscreteGDA_maxPurchaseQuantity,
-    DiscreteGDA_price_function_arguments,
     DiscreteGDA_purchase_price,
+    DiscreteGDA_price_function_arguments,
+    DiscreteGDA_totalTokensMinted,
     DiscreteGDA_setInitialPrice,
     DiscreteGDA_setScaleFactor,
     DiscreteGDA_setDecayConstant,
@@ -93,6 +94,11 @@ end
 func ERC721_base_token_uri_suffix() -> (res : felt):
 end
 
+# The total supply of the ERC721 token
+@storage_var
+func ERC721_total_supply() -> (res : felt):
+end
+
 
 #########################
 ###### CONSTRUCTOR ######
@@ -107,6 +113,7 @@ func constructor{
         name : felt,
         symbol : felt,
         owner : felt,
+        total_supply : felt,
         _tokenIdStart : felt,
         _initialPrice : felt,
         _scaleFactor : felt,
@@ -119,6 +126,9 @@ func constructor{
     # Construct Parents
     ERC721_initializer(name, symbol)
     Ownable_initializer(owner)
+
+    # Set the total supply
+    ERC721_total_supply.write(total_supply)
 
     #  Set TokenURI and initial token ID
     ERC721_Metadata_setBaseTokenURI(base_token_uri_len, base_token_uri, token_uri_suffix)
@@ -265,6 +275,16 @@ func symbol{
     }() -> (symbol: felt):
     let (symbol) = ERC721_symbol()
     return (symbol)
+end
+
+@view
+func totalSupply{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }() -> (total_supply : felt):
+    let (total_supply) = ERC721_total_supply.read()
+    return (total_supply)
 end
 
 @view

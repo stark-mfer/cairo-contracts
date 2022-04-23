@@ -119,6 +119,7 @@ end
 ######## GETTERS ########
 #########################
 
+# https://github.com/sambarnes/cairo-dutch/pull/1
 # View the current purchase price for a given number of tokens
 @view
 func DiscreteGDA_purchase_price{
@@ -163,7 +164,6 @@ func DiscreteGDA_purchase_price{
     return (res=total_cost_uint)
 end
 
-# https://github.com/sambarnes/cairo-dutch/pull/1
 # View the values of the arguments for the DiscreteGDA price function
 @view
 func DiscreteGDA_price_function_arguments{
@@ -209,6 +209,17 @@ func DiscreteGDA_price_function_arguments{
     assert [res + 5] = time_since_start # T
 
     return (res_len=6, res=res)
+end
+
+# Get current total number of tokens minted
+@view
+func DiscreteGDA_totalTokensMinted{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }() -> (total_minted : felt):
+    let (total_minted) = DiscreteGDA_currentId.read()
+    return (total_minted)
 end
 
 
