@@ -32,7 +32,7 @@ nile compile
 
 ```shell
 nile compile
-cp artifacts/abi/* ../stark-mfer-frontend/src/abi/
+cp artifacts/abis/* ../eth-amsterdam-front/src/abi/
 ```
 
 ### Links
