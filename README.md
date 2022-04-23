@@ -1,5 +1,8 @@
-# eth-amsterdam
-A repo for EthAmsterdam hackathon - gradual dutch auction in Cairo
+# Herodotus
+
+A [Gradual Dutch Auction](https://www.paradigm.xyz/2022/04/gda) implementation in [Cairo](https://www.cairo-lang.org/docs/).
+
+This project was built for [EthAmsterdam](https://hack.ethglobal.com/ethamsterdam).
 
 ## Local Development
 
@@ -22,6 +25,6 @@ nile compile
 
 ### Links
 
-- https://github.com/OpenZeppelin/nile
-- https://github.com/OpenZeppelin/cairo-contracts
-- https://github.com/sambarnes/cairo-dutch
+- <https://github.com/OpenZeppelin/nile>
+- <https://github.com/OpenZeppelin/cairo-contracts>
+- <https://github.com/sambarnes/cairo-dutch>
