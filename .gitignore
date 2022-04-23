@@ -139,3 +139,6 @@ Makefile
 
 # Nile
 node.json
+
+# Test contracts
+contracts/dutch.cairo

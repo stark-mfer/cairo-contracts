@@ -10,12 +10,7 @@ from starkware.starknet.common.syscalls import (
     get_caller_address,
     get_contract_address
 )
-from starkware.cairo.common.math import (
-    assert_not_zero,
-    assert_le
-)
 
-from openzeppelin.utils.constants import FALSE, TRUE
 from openzeppelin.introspection.ERC165 import ERC165_supports_interface
 from openzeppelin.token.erc721.library import (
     ERC721_name,
@@ -35,12 +30,7 @@ from openzeppelin.token.erc721.library import (
     ERC721_burn
 )
 
-from starkware.cairo.common.uint256 import (
-    Uint256,
-    uint256_le,
-    uint256_mul,
-    uint256_sub,
-)
+from starkware.cairo.common.uint256 import Uint256
 
 from openzeppelin.access.ownable import (
     Ownable_initializer,
@@ -48,60 +38,33 @@ from openzeppelin.access.ownable import (
 )
 from openzeppelin.token.erc20.interfaces.IERC20 import IERC20
 
-from contracts.Math64x61 import ( 
-    Math64x61_fromFelt, 
-    Math64x61_toFelt,
-    Math64x61_sub,
-    Math64x61_mul,
-    Math64x61_div,
-    Math64x61_pow,
-    Math64x61_exp,
-    Math64x61_toUint256,
-    Math64x61_ONE
-)
-
 from contracts.ERC721_Metadata_base import (
     ERC721_Metadata_initializer,
     ERC721_Metadata_tokenURI,
     ERC721_Metadata_setBaseTokenURI,
 )
 
-from contracts.utils.Utils import felt_to_uint256
+from contracts.DiscreteGDA import (
+    DiscreteGDA_initializer,
+    DiscreteGDA_purchase_event,
+    DiscreteGDA_currentId,
+    DiscreteGDA_initialPrice,
+    DiscreteGDA_scaleFactor,
+    DiscreteGDA_decayConstant,
+    DiscreteGDA_auctionStartTime,
+    DiscreteGDA_maxPurchaseQuantity,
+    DiscreteGDA_price_function_arguments,
+    DiscreteGDA_purchase_price,
+    DiscreteGDA_setInitialPrice,
+    DiscreteGDA_setScaleFactor,
+    DiscreteGDA_setDecayConstant,
+    DiscreteGDA_purchaseTokens
+)
 
 
 #########################
 ### STORAGE VARIABLES ###
 #########################
-
-# Current NFT ID
-@storage_var
-func currentId() -> (res : felt):
-end
-
-# parameter that controls which erc20 should be used to purchase tokens
-@storage_var
-func erc20Address() -> (res : felt):
-end
-
-# parameter that controls initial price, stored as a 59x18 fixed precision number
-@storage_var
-func initialPrice() -> (res : felt):
-end
-
-# parameter that controls how much the starting price of each successive auction increases by
-@storage_var
-func scaleFactor() -> (res : felt):
-end
-
-# parameter that controls price decay
-@storage_var
-func decayConstant() -> (res : felt):
-end
-
-# start time for all auctions
-@storage_var
-func auctionStartTime() -> (res : felt):
-end
 
 # Token URI Storage Variables
 # This is a mapping of index to the token URI string
@@ -131,24 +94,6 @@ func ERC721_base_token_uri_suffix() -> (res : felt):
 end
 
 
-######################################
-### Discrete Gradual Dutch Auction ###
-######################################
-
-
-#########################
-######### EVENTS ########
-#########################
-
-@event
-func purchase_event(
-        numTokens : felt,
-        to : felt,
-        value : Uint256
-):
-end
-
-
 #########################
 ###### CONSTRUCTOR ######
 #########################
@@ -162,10 +107,11 @@ func constructor{
         name : felt,
         symbol : felt,
         owner : felt,
-        tokenIdStart : felt,
+        _tokenIdStart : felt,
         _initialPrice : felt,
         _scaleFactor : felt,
         _decayConstant : felt,
+        _maxPurchaseQuantity : felt,
         base_token_uri_len : felt,
         base_token_uri : felt*,
         token_uri_suffix : felt
@@ -176,19 +122,22 @@ func constructor{
 
     #  Set TokenURI and initial token ID
     ERC721_Metadata_setBaseTokenURI(base_token_uri_len, base_token_uri, token_uri_suffix)
-    currentId.write(tokenIdStart)
 
-    # Write initial values
-    initialPrice.write(_initialPrice)
-    scaleFactor.write(_scaleFactor)
-    decayConstant.write(_decayConstant)
-
-    let (block_timestamp) = get_block_timestamp()
-    let (fixedTimestamp) = Math64x61_fromFelt(block_timestamp)
-    auctionStartTime.write(fixedTimestamp)
+    # Initialize GDA parameters
+    DiscreteGDA_initializer(
+        _tokenIdStart,
+        _initialPrice,
+        _scaleFactor,
+        _decayConstant,
+        _maxPurchaseQuantity
+        )
     return ()
 end
 
+
+######################################
+### Discrete Gradual Dutch Auction ###
+######################################
 
 #########################
 ######## GETTERS ########
@@ -202,42 +151,11 @@ func purchase_price{
     }(
         numTokens : felt
     ) -> (res : Uint256):
-    alloc_locals
-
-    let (local current_id) = currentId.read()
-    let (local auction_start_time) = auctionStartTime.read()
-    let (local initial_price) = initialPrice.read()
-    let (local decay_constant) = decayConstant.read()
-
-    let (quantity) = Math64x61_fromFelt(numTokens)
-    let (num_sold) = Math64x61_fromFelt(current_id)
-
-    let (block_timestamp) = get_block_timestamp()
-    let (fixedTimestamp) = Math64x61_fromFelt(block_timestamp)
-    let (time_since_start) = Math64x61_sub(fixedTimestamp, auction_start_time)
-
-    let (scale_factor) = scaleFactor.read()
-
-    let (local pow_num) = Math64x61_pow(scale_factor, num_sold)
-    let (local pow_num2) = Math64x61_pow(scale_factor, quantity)
-    let (local mul_num1) = Math64x61_mul(decay_constant, time_since_start)
-
-    let (num1) = Math64x61_mul(initial_price, pow_num)
-    let (num2) = Math64x61_sub(pow_num2, Math64x61_ONE)
-
-    let (den1) = Math64x61_exp(mul_num1) 
-    let (den2) = Math64x61_sub(scale_factor, Math64x61_ONE)
-
-    let (local mul_num2) = Math64x61_mul(num1, num2)
-    let (local mul_num3) = Math64x61_mul(den1, den2)
-
-    let (local total_cost) = Math64x61_div(mul_num2, mul_num3)
-    let (total_cost_uint) = Math64x61_toUint256(total_cost)
-
+    let (total_cost_uint) = DiscreteGDA_purchase_price(numTokens)
     return (res=total_cost_uint)
 end
 
-# discreteGDA arguments
+# View the values of the arguments for the DiscreteGDA price function
 @view
 func price_function_arguments{
         syscall_ptr : felt*,
@@ -246,42 +164,8 @@ func price_function_arguments{
     }(
         numTokens : felt
     ) -> (res_len : felt, res : felt*):
-    alloc_locals
-
-    let (local res : felt*) = alloc()
-
-    let (local current_id) = currentId.read()
-    let (local auction_start_time) = auctionStartTime.read()
-    let (local initial_price) = initialPrice.read()
-    let (local decay_constant) = decayConstant.read()
-
-    let (quantity) = Math64x61_fromFelt(numTokens)
-    let (num_sold) = Math64x61_fromFelt(current_id)
-
-    let (block_timestamp) = get_block_timestamp()
-    let (fixedTimestamp) = Math64x61_fromFelt(block_timestamp)
-    let (time_since_start) = Math64x61_sub(fixedTimestamp, auction_start_time)
-
-    let (scale_factor) = scaleFactor.read()
-
-    let (local pow_num) = Math64x61_pow(scale_factor, num_sold)
-    let (local pow_num2) = Math64x61_pow(scale_factor, quantity)
-    let (local mul_num1) = Math64x61_mul(decay_constant, time_since_start)
-
-    let (num1) = Math64x61_mul(initial_price, pow_num)
-    let (num2) = Math64x61_sub(pow_num2, Math64x61_ONE)
-
-    let (den1) = Math64x61_exp(mul_num1) 
-    let (den2) = Math64x61_sub(scale_factor, Math64x61_ONE)
-
-    assert [res]     = initial_price    # k
-    assert [res + 1] = scale_factor     # alpha
-    assert [res + 2] = decay_constant   # lambda
-    assert [res + 3] = quantity         # q
-    assert [res + 4] = num_sold         # m
-    assert [res + 5] = time_since_start # T
-
-    return (res_len=6, res=res)
+    let (res_len, res) = DiscreteGDA_price_function_arguments(numTokens)
+    return (res_len, res)
 end
 
 
@@ -297,8 +181,7 @@ func setInitialPrice{
     }(
         _initialPrice : felt
     ):
-    Ownable_only_owner()
-    initialPrice.write(_initialPrice)
+    DiscreteGDA_setInitialPrice(_initialPrice)
     return ()
 end
 
@@ -310,8 +193,7 @@ func setScaleFactor{
     }( 
         _scaleFactor: felt
     ):
-    Ownable_only_owner()
-    scaleFactor.write(_scaleFactor)
+    DiscreteGDA_setScaleFactor(_scaleFactor)
     return ()
 end
 
@@ -323,8 +205,7 @@ func setDecayConstant{
     }( 
         _decayConstant: felt
     ):
-    Ownable_only_owner()
-    decayConstant.write(_decayConstant)
+    DiscreteGDA_setDecayConstant(_decayConstant)
     return ()
 end
 
@@ -333,7 +214,6 @@ end
 ####### EXTERNALS #######
 #########################
 
-# Purchase a specific number of tokens from the GDA
 @external
 func purchaseTokens{
         syscall_ptr : felt*,
@@ -344,52 +224,9 @@ func purchaseTokens{
         to : felt,
         value : Uint256
     ):
-    alloc_locals
-
-    with_attr error_message("Number of tokens is more than 3."):
-        assert_le(numTokens, 3)
-    end
-
-    let (price) = purchase_price(numTokens)
-    let (is_valid_bid) = uint256_le(price, value)
-    with_attr error_message("Insufficient payment."):
-        assert is_valid_bid = TRUE
-    end
-
-    # Mint all tokens
-    _mint_batch(to, numTokens)
-
-    # Emit purchase event
-    purchase_event.emit(numTokens=numTokens, to=to, value=value)
-
+    DiscreteGDA_purchaseTokens(numTokens, to, value)
     return ()
 end
-
-
-#########################
-####### INTERNALS #######
-#########################
-
-func _mint_batch{pedersen_ptr : HashBuiltin*, syscall_ptr : felt*, range_check_ptr}(
-        to : felt, amount : felt) -> ():
-    alloc_locals
-    assert_not_zero(to)
-
-    if amount == 0:
-        return ()
-    end
-
-    let (local current_id) = currentId.read()
-    let (current_id_uint : Uint256) = felt_to_uint256(current_id)
-    ERC721_mint(to, current_id_uint)
-
-    currentId.write(current_id + 1)
-
-    return _mint_batch(
-        to=to,
-        amount=(amount - 1))
-end
-
 
 
 ######################################
