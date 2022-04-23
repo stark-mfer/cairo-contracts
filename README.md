@@ -1,4 +1,4 @@
-# Herodotus
+# stark-mfer
 
 A [Gradual Dutch Auction](https://www.paradigm.xyz/2022/04/gda) implementation in [Cairo](https://www.cairo-lang.org/docs/).
 
