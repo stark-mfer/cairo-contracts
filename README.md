@@ -3,7 +3,7 @@
 Contracts for the stark mfer collection. These NFTs are listed via
 a [Gradual Dutch Auction](https://www.paradigm.xyz/2022/04/gda) implementation in [Cairo](https://www.cairo-lang.org/docs/).
 
-We used [Flipper](https://github.com/Anish-Agnihotri/flipper) to flip the existing [mfer](https://opensea.io/collection/mfers) collection and publish metadata to IPFS at [ipfs://QmRnvgj1sofQBTPXfAZX76ktQecC9Xt4FwPCnsNjLLn5XK/](ipfs://QmRnvgj1sofQBTPXfAZX76ktQecC9Xt4FwPCnsNjLLn5XK/).
+We used [Flipper](https://github.com/Anish-Agnihotri/flipper) to flip the existing [mfer](https://opensea.io/collection/mfers) collection and publish metadata to IPFS at `ipfs://QmRnvgj1sofQBTPXfAZX76ktQecC9Xt4FwPCnsNjLLn5XK/`.
 
 This project was built for [EthAmsterdam](https://hack.ethglobal.com/ethamsterdam).
 
