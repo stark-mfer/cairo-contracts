@@ -1,8 +1,8 @@
 %lang starknet
 
 from openzeppelin.token.erc721.interfaces.IERC721 import IERC721
-from starkware.cairo.common.alloc import alloc
 
+from starkware.cairo.common.alloc import alloc
 from starkware.cairo.common.cairo_builtins import HashBuiltin, SignatureBuiltin
 from starkware.starknet.common.syscalls import (
     get_block_number,
@@ -12,8 +12,9 @@ from starkware.starknet.common.syscalls import (
 )
 from starkware.cairo.common.math import (
     assert_not_zero,
-    split_felt
+    assert_le
 )
+
 from openzeppelin.utils.constants import FALSE, TRUE
 from openzeppelin.introspection.ERC165 import ERC165_supports_interface
 from openzeppelin.token.erc721.library import (
@@ -47,7 +48,6 @@ from openzeppelin.access.ownable import (
 )
 from openzeppelin.token.erc20.interfaces.IERC20 import IERC20
 
-
 from contracts.Math64x61 import ( 
     Math64x61_fromFelt, 
     Math64x61_toFelt,
@@ -66,10 +66,14 @@ from contracts.ERC721_Metadata_base import (
     ERC721_Metadata_setBaseTokenURI,
 )
 
-#
-# Storage
-#
+from contracts.utils.Utils import felt_to_uint256
 
+
+#########################
+### STORAGE VARIABLES ###
+#########################
+
+# Current NFT ID
 @storage_var
 func currentId() -> (res : felt):
 end
@@ -84,50 +88,70 @@ end
 func initialPrice() -> (res : felt):
 end
 
-# parameter that controls how much the starting price of each successive auction increases by,
-# stored as a 59x18 fixed precision number
+# parameter that controls how much the starting price of each successive auction increases by
 @storage_var
 func scaleFactor() -> (res : felt):
 end
 
-# parameter that controls price decay, stored as a 59x18 fixed precision number
+# parameter that controls price decay
 @storage_var
 func decayConstant() -> (res : felt):
 end
 
-# start time for all auctions, stored as a 59x18 fixed precision number
+# start time for all auctions
 @storage_var
 func auctionStartTime() -> (res : felt):
 end
 
 # Token URI Storage Variables
+# This is a mapping of index to the token URI string
+# It has to be split into shorter strings with len < 32
+# e.g. 
+#        1 -> 'https://gateway.pinata.cloud/ip'
+#        2 -> 'fs/QmRnvgj1sofQBTPXfAZX76ktQecC'
+#        3 -> '9Xt4FwPCnsNjLLn5XK/
 @storage_var
-func ERC721_base_token_uri(index: felt) -> (res: felt):
+func ERC721_base_token_uri(index : felt) -> (res : felt):
 end
 
+# The length of the token URI array
+# e.g. [
+#        'https://gateway.pinata.cloud/ip',
+#        'fs/QmRnvgj1sofQBTPXfAZX76ktQecC',
+#        '9Xt4FwPCnsNjLLn5XK/'
+#      ]
+# len = 3
 @storage_var
-func ERC721_base_token_uri_len() -> (res: felt):
+func ERC721_base_token_uri_len() -> (res : felt):
 end
 
+# The suffix of metadate '.json'
 @storage_var
-func ERC721_base_token_uri_suffix() -> (res: felt):
+func ERC721_base_token_uri_suffix() -> (res : felt):
 end
 
 
-#
-# Events
-#
+######################################
+### Discrete Gradual Dutch Auction ###
+######################################
+
+
+#########################
+######### EVENTS ########
+#########################
+
 @event
 func purchase_event(
         numTokens : felt,
-        to: felt,
-        value: Uint256
+        to : felt,
+        value : Uint256
 ):
 end
 
-#
-# Constructor
-#
+
+#########################
+###### CONSTRUCTOR ######
+#########################
 
 @constructor
 func constructor{
@@ -135,22 +159,25 @@ func constructor{
         pedersen_ptr : HashBuiltin*,
         range_check_ptr
     }(
-        name: felt,
-        symbol: felt,
-        owner: felt,
-        _initialPrice: felt,
-        _scaleFactor: felt,
-        _decayConstant: felt,
-        base_token_uri_len: felt,
-        base_token_uri: felt*,
-        token_uri_suffix: felt
+        name : felt,
+        symbol : felt,
+        owner : felt,
+        tokenIdStart : felt,
+        _initialPrice : felt,
+        _scaleFactor : felt,
+        _decayConstant : felt,
+        base_token_uri_len : felt,
+        base_token_uri : felt*,
+        token_uri_suffix : felt
     ):
     # Construct Parents
     ERC721_initializer(name, symbol)
     Ownable_initializer(owner)
+
     #  Set TokenURI and initial token ID
     ERC721_Metadata_setBaseTokenURI(base_token_uri_len, base_token_uri, token_uri_suffix)
-    currentId.write(1)
+    currentId.write(tokenIdStart)
+
     # Write initial values
     initialPrice.write(_initialPrice)
     scaleFactor.write(_scaleFactor)
@@ -162,81 +189,19 @@ func constructor{
     return ()
 end
 
-# purchase a specific number of tokens from the GDA
-@external
-func purchaseTokens{
-        syscall_ptr : felt*,
-        pedersen_ptr : HashBuiltin*,
-        range_check_ptr
-    }(
-        numTokens : felt,  
-        to: felt,
-        value: Uint256 # Denominated in auction's configured ERC20
-    ):
-    alloc_locals
 
-    let (price) = purchase_price(numTokens)
-    let (is_valid_bid) = uint256_le(price, value)
-    with_attr error_message("insufficient payment"):
-        assert is_valid_bid = TRUE
-    end
-
-    # Mint all tokens
-    _mint_batch(to, numTokens)
-
-
-    # Refund buyer for excess payment
-    # let (buyer : felt) = get_caller_address()
-    # let (contract_address : felt) = get_contract_address()
-    # let (payment_token : felt) = erc20Address.read()
-    # let (excess_price : Uint256) = uint256_sub(price, value)
-
-    # let (success) = IERC20.transferFrom(
-    #     payment_token,
-    #     buyer,
-    #     contract_address, 
-    #     excess_price, # purchase price - value sent
-    # )
-    # with_attr error_message("unable to refund"):
-    #     assert success = TRUE
-    # end
-
-    # Emit event
-    purchase_event.emit(numTokens=numTokens, to=to, value=value)
-
-    return ()
-end
-
-func _mint_batch{pedersen_ptr : HashBuiltin*, syscall_ptr : felt*, range_check_ptr}(
-        to : felt, amount : felt) -> ():
-    alloc_locals
-    assert_not_zero(to)
-
-    if amount == 0:
-        return ()
-    end
-
-    let (local current_id) = currentId.read()
-    let (current_id_uint : Uint256) = felt_to_uint256(current_id)
-    ERC721_mint(to, current_id_uint)
-
-    currentId.write(current_id + 1)
-
-    return _mint_batch(
-        to=to,
-        amount=(amount - 1))
-end
-
-#
-# Getters
-#
+#########################
+######## GETTERS ########
+#########################
 
 @view
 func purchase_price{
         syscall_ptr : felt*,
         pedersen_ptr : HashBuiltin*,
         range_check_ptr
-    }(numTokens: felt) -> (res: Uint256):
+    }(
+        numTokens : felt
+    ) -> (res : Uint256):
     alloc_locals
 
     let (local current_id) = currentId.read()
@@ -272,24 +237,18 @@ func purchase_price{
     return (res=total_cost_uint)
 end
 
-#
-# ERC721_Mintable_Burnable
-#
-
-#
-# Getters
-#
-
 # discreteGDA arguments
 @view
-func price_arguments{
+func price_function_arguments{
         syscall_ptr : felt*,
         pedersen_ptr : HashBuiltin*,
         range_check_ptr
-    }(numTokens: felt) -> (res_len : felt, res : felt*):
+    }(
+        numTokens : felt
+    ) -> (res_len : felt, res : felt*):
     alloc_locals
 
-    let (local res: felt*) = alloc()
+    let (local res : felt*) = alloc()
 
     let (local current_id) = currentId.read()
     let (local auction_start_time) = auctionStartTime.read()
@@ -325,7 +284,122 @@ func price_arguments{
     return (res_len=6, res=res)
 end
 
-# ERC721
+
+#########################
+######## SETTERS ########
+#########################
+
+@external
+func setInitialPrice{
+        pedersen_ptr : HashBuiltin*, 
+        syscall_ptr : felt*, 
+        range_check_ptr
+    }(
+        _initialPrice : felt
+    ):
+    Ownable_only_owner()
+    initialPrice.write(_initialPrice)
+    return ()
+end
+
+@external
+func setScaleFactor{
+        pedersen_ptr : HashBuiltin*, 
+        syscall_ptr : felt*, 
+        range_check_ptr
+    }( 
+        _scaleFactor: felt
+    ):
+    Ownable_only_owner()
+    scaleFactor.write(_scaleFactor)
+    return ()
+end
+
+@external
+func setDecayConstant{
+        pedersen_ptr : HashBuiltin*, 
+        syscall_ptr : felt*, 
+        range_check_ptr
+    }( 
+        _decayConstant: felt
+    ):
+    Ownable_only_owner()
+    decayConstant.write(_decayConstant)
+    return ()
+end
+
+
+#########################
+####### EXTERNALS #######
+#########################
+
+# Purchase a specific number of tokens from the GDA
+@external
+func purchaseTokens{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }(
+        numTokens : felt,  
+        to : felt,
+        value : Uint256
+    ):
+    alloc_locals
+
+    with_attr error_message("Number of tokens is more than 3."):
+        assert_le(numTokens, 3)
+    end
+
+    let (price) = purchase_price(numTokens)
+    let (is_valid_bid) = uint256_le(price, value)
+    with_attr error_message("Insufficient payment."):
+        assert is_valid_bid = TRUE
+    end
+
+    # Mint all tokens
+    _mint_batch(to, numTokens)
+
+    # Emit purchase event
+    purchase_event.emit(numTokens=numTokens, to=to, value=value)
+
+    return ()
+end
+
+
+#########################
+####### INTERNALS #######
+#########################
+
+func _mint_batch{pedersen_ptr : HashBuiltin*, syscall_ptr : felt*, range_check_ptr}(
+        to : felt, amount : felt) -> ():
+    alloc_locals
+    assert_not_zero(to)
+
+    if amount == 0:
+        return ()
+    end
+
+    let (local current_id) = currentId.read()
+    let (current_id_uint : Uint256) = felt_to_uint256(current_id)
+    ERC721_mint(to, current_id_uint)
+
+    currentId.write(current_id + 1)
+
+    return _mint_batch(
+        to=to,
+        amount=(amount - 1))
+end
+
+
+
+######################################
+############## ERC721 ################
+######################################
+
+#########################
+######## GETTERS ########
+#########################
+
 @view
 func supportsInterface{
         syscall_ptr : felt*,
@@ -406,9 +480,10 @@ func tokenURI{
     return (token_uri_len=token_uri_len, token_uri=token_uri)
 end
 
-#
-# Externals
-#
+
+#########################
+####### EXTERNALS #######
+#########################
 
 @external
 func approve{
@@ -491,14 +566,4 @@ func burn{
     ERC721_only_token_owner(tokenId)
     ERC721_burn(tokenId)
     return ()
-end
-
-#
-# Utils
-#
-
-
-func felt_to_uint256{range_check_ptr}(x) -> (x_ : Uint256):
-    let split = split_felt(x)
-    return (Uint256(low=split.low, high=split.high))
 end
