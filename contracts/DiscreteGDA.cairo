@@ -131,7 +131,7 @@ end
 # @notice This function returns the price calculated from the price function Discrete Gradual Dutch Auction
 #         published in the Paradigm blogpost https://www.paradigm.xyz/2022/04/gda
 # @dev    This is a view function that takes in the number of tokens to be purchased
-# @dev    
+# @dev    You can call this in your ERC721 contract for the pricing of the tokens
 # @param  numTokens : Number of tokens to be purchased
 
 # https://github.com/sambarnes/cairo-dutch/pull/1
@@ -149,8 +149,7 @@ func DiscreteGDA_purchase_price{
     let (local current_id) = DiscreteGDA_currentId.read()
     let (local auction_start_time) = DiscreteGDA_auctionStartTime.read()
     let (local initial_price) = DiscreteGDA_initialPrice.read()
-    let (local _decay_constant) = DiscreteGDA_decayConstant.read()
-    let (decay_constant) = Math64x61_fromFelt(_decay_constant)
+    let (local decay_constant) = DiscreteGDA_decayConstant.read()
 
     let (quantity) = Math64x61_fromFelt(numTokens)
     let (num_sold) = Math64x61_fromFelt(current_id)
@@ -159,8 +158,7 @@ func DiscreteGDA_purchase_price{
     let (fixedTimestamp) = Math64x61_fromFelt(block_timestamp)
     let (time_since_start) = Math64x61_sub(fixedTimestamp, auction_start_time)
 
-    let (_scale_factor) = DiscreteGDA_scaleFactor.read()
-    let (scale_factor) = Math64x61_fromFelt(_scale_factor)
+    let (scale_factor) = DiscreteGDA_scaleFactor.read()
 
     let (local pow_num) = Math64x61_pow(scale_factor, num_sold)
     let (local pow_num2) = Math64x61_pow(scale_factor, quantity)
