@@ -131,7 +131,7 @@ end
 # @notice This function returns the price calculated from the price function Discrete Gradual Dutch Auction
 #         published in the Paradigm blogpost https://www.paradigm.xyz/2022/04/gda
 # @dev    This is a view function that takes in the number of tokens to be purchased
-# @dev    
+# @dev    You can call this in your ERC721 contract for the pricing of the tokens
 # @param  numTokens : Number of tokens to be purchased
 
 # https://github.com/sambarnes/cairo-dutch/pull/1
