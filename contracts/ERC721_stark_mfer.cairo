@@ -31,6 +31,7 @@ from openzeppelin.token.erc721.library import (
 )
 
 from starkware.cairo.common.uint256 import Uint256
+from starkware.starknet.common.messages import send_message_to_l1
 
 from openzeppelin.access.ownable import (
     Ownable_initializer,
@@ -43,6 +44,8 @@ from contracts.ERC721_Metadata_base import (
     ERC721_Metadata_tokenURI,
     ERC721_Metadata_setBaseTokenURI,
 )
+
+from contracts.utils.Utils import felt_to_uint256
 
 from contracts.DiscreteGDA import (
     DiscreteGDA_initializer,
@@ -113,8 +116,8 @@ func constructor{
         name : felt,
         symbol : felt,
         owner : felt,
-        total_supply : felt,
         _tokenIdStart : felt,
+        _total_supply : felt,
         _initialPrice : felt,
         _scaleFactor : felt,
         _decayConstant : felt,
@@ -128,7 +131,7 @@ func constructor{
     Ownable_initializer(owner)
 
     # Set the total supply
-    ERC721_total_supply.write(total_supply)
+    ERC721_total_supply.write(_total_supply)
 
     #  Set TokenURI and initial token ID
     ERC721_Metadata_setBaseTokenURI(base_token_uri_len, base_token_uri, token_uri_suffix)
@@ -140,7 +143,7 @@ func constructor{
         _scaleFactor,
         _decayConstant,
         _maxPurchaseQuantity
-        )
+    )
     return ()
 end
 
@@ -242,6 +245,26 @@ end
 ######################################
 ############## ERC721 ################
 ######################################
+
+#########################
+### STORAGE VARIABLES ###
+#########################
+
+# Target L1 ERC721 Contract
+@storage_var
+func l1_messaging_contract() -> (l1_messaging_contract : felt):
+end
+
+#########################
+######## EVENTS #########
+#########################
+
+@event
+func l1_send_initiated(
+        tokenId : felt,
+        to: felt
+):
+end
 
 #########################
 ######## GETTERS ########
@@ -422,5 +445,80 @@ func burn{
     }(tokenId: Uint256):
     ERC721_only_token_owner(tokenId)
     ERC721_burn(tokenId)
+    return ()
+end
+
+@external
+func set_l1_messaging_contract{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }(l1 : felt):
+    l1_messaging_contract.write(l1)
+    return ()
+end
+
+
+
+# Bridging stuff
+
+@external
+func bridge_to_l1{
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
+        range_check_ptr
+    }(recipient: felt, tokenId: Uint256):
+    ERC721_only_token_owner(tokenId)
+    let (l1_messaging_contr) = l1_messaging_contract.read()
+    let (caller_address) = get_caller_address()
+
+    # alloc_locals
+
+    let (message_payload: felt*) = alloc()
+    assert message_payload[0] = caller_address
+    assert message_payload[1] = recipient
+    assert message_payload[2] = tokenId.low
+
+    send_message_to_l1(
+        to_address=l1_messaging_contr,
+        payload_size=3,
+        payload=message_payload
+    )
+
+    l1_send_initiated.emit(
+        tokenId.low,
+        recipient
+    )
+    return ()
+end
+
+@l1_handler
+func l1_claimed{
+            syscall_ptr : felt*,
+            pedersen_ptr : HashBuiltin*,
+            range_check_ptr
+        }(
+        from_address: felt,
+        tokenId : felt
+    ):
+
+    let (tokenIdUint) = felt_to_uint256(tokenId)
+    ERC721_burn(tokenIdUint)
+    return ()
+end
+
+@l1_handler
+func l1_to_l2{
+            syscall_ptr : felt*,
+            pedersen_ptr : HashBuiltin*,
+            range_check_ptr
+        }(
+        from_address: felt,
+        to: felt,
+        tokenId : felt
+    ):
+
+    let (tokenIdUint) = felt_to_uint256(tokenId)
+    ERC721_mint(to, (tokenIdUint))
     return ()
 end

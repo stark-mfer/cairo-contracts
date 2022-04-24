@@ -10,7 +10,7 @@ from starkware.starknet.common.syscalls import (
 
 from starkware.cairo.common.math import (
     assert_not_zero,
-    assert_le
+    assert_in_range
 )
 
 from starkware.cairo.common.uint256 import (
@@ -43,6 +43,14 @@ from contracts.utils.Utils import felt_to_uint256
 ###### INITIALIZER ######
 #########################
 
+# @notice Initializes the DiscreteGDA storage variables
+# @dev    This is used in the constructor or a setter function
+#         in the ERC721 contract
+# @param  _tokenIdStart        : Starting token ID of the ERC721 collection
+# @param  _initialPrice        : Initial price of the NFTs
+# @param  _scaleFactor         : Scale factor alpha
+# @param  _decayConstant       : Decay constant lambda
+# @param  _maxPurchaseQuantity : Maximum purchase quantity
 func DiscreteGDA_initializer{
         syscall_ptr : felt*,
         pedersen_ptr : HashBuiltin*,
@@ -119,6 +127,13 @@ end
 ######## GETTERS ########
 #########################
 
+
+# @notice This function returns the price calculated from the price function Discrete Gradual Dutch Auction
+#         published in the Paradigm blogpost https://www.paradigm.xyz/2022/04/gda
+# @dev    This is a view function that takes in the number of tokens to be purchased
+# @dev    
+# @param  numTokens : Number of tokens to be purchased
+
 # https://github.com/sambarnes/cairo-dutch/pull/1
 # View the current purchase price for a given number of tokens
 @view
@@ -134,7 +149,8 @@ func DiscreteGDA_purchase_price{
     let (local current_id) = DiscreteGDA_currentId.read()
     let (local auction_start_time) = DiscreteGDA_auctionStartTime.read()
     let (local initial_price) = DiscreteGDA_initialPrice.read()
-    let (local decay_constant) = DiscreteGDA_decayConstant.read()
+    let (local _decay_constant) = DiscreteGDA_decayConstant.read()
+    let (decay_constant) = Math64x61_fromFelt(_decay_constant)
 
     let (quantity) = Math64x61_fromFelt(numTokens)
     let (num_sold) = Math64x61_fromFelt(current_id)
@@ -143,7 +159,8 @@ func DiscreteGDA_purchase_price{
     let (fixedTimestamp) = Math64x61_fromFelt(block_timestamp)
     let (time_since_start) = Math64x61_sub(fixedTimestamp, auction_start_time)
 
-    let (scale_factor) = DiscreteGDA_scaleFactor.read()
+    let (_scale_factor) = DiscreteGDA_scaleFactor.read()
+    let (scale_factor) = Math64x61_fromFelt(_scale_factor)
 
     let (local pow_num) = Math64x61_pow(scale_factor, num_sold)
     let (local pow_num2) = Math64x61_pow(scale_factor, quantity)
@@ -222,6 +239,16 @@ func DiscreteGDA_totalTokensMinted{
     return (total_minted)
 end
 
+# Get auction start time
+@view
+func DiscreteGDA_getAuctionStartTime{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }() -> (time : felt):
+    let (time) = DiscreteGDA_auctionStartTime.read()
+    return (time)
+end
 
 #########################
 ######## SETTERS ########
@@ -284,8 +311,8 @@ func DiscreteGDA_purchaseTokens{
     alloc_locals
 
     let (max_purchase) = DiscreteGDA_maxPurchaseQuantity.read()
-    with_attr error_message("Number of tokens is more than the max defined."):
-        assert_le(numTokens, max_purchase)
+    with_attr error_message("Number of tokens is not in range."):
+        assert_in_range(numTokens, 1, max_purchase)
     end
 
     let (price) = DiscreteGDA_purchase_price(numTokens)
@@ -325,5 +352,6 @@ func _DiscreteGDA_mint_batch{pedersen_ptr : HashBuiltin*, syscall_ptr : felt*, r
 
     return _DiscreteGDA_mint_batch(
         to=to,
-        amount=(amount - 1))
+        amount=(amount - 1)
+    )
 end
